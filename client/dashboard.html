@@ -156,6 +156,7 @@
     }).addTo(map);
 
     const guardMarkers = {};
+    const locationMarkers = {};
 
     // Load data
     async function loadDashboard() {
@@ -171,7 +172,7 @@
         // Map data
         const mapRes = await api('/dashboard/map');
         const mapData = await mapRes.json();
-        updateMap(mapData.guards);
+        updateMap(mapData.guards, mapData.locations);
         updateRoster(mapData.guards);
 
         // Activity
@@ -189,10 +190,35 @@
       }
     }
 
-    function updateMap(guards) {
+    function updateMap(guards, locations) {
       // Clear old markers
       Object.values(guardMarkers).forEach(m => map.removeLayer(m));
+      Object.values(locationMarkers).forEach(m => map.removeLayer(m));
 
+      // Add location markers
+      const allBounds = [];
+      (locations || []).forEach(loc => {
+        if (loc.lat && loc.lng) {
+          const icon = L.divIcon({
+            className: 'location-marker',
+            html: `<div style="width:24px;height:24px;background:#e8b84b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3)">📍</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+
+          const marker = L.marker([loc.lat, loc.lng], { icon }).addTo(map);
+          marker.bindPopup(`
+            <div style="font-family:Inter,sans-serif;font-size:12px">
+              <strong>${loc.name}</strong><br>
+              ${loc.address || 'No address'}
+            </div>
+          `);
+          locationMarkers[loc.id] = marker;
+          allBounds.push([loc.lat, loc.lng]);
+        }
+      });
+
+      // Add guard markers
       guards.forEach(guard => {
         if (guard.lat && guard.lng) {
           const icon = L.divIcon({
@@ -211,15 +237,13 @@
             </div>
           `);
           guardMarkers[guard.id] = marker;
+          allBounds.push([guard.lat, guard.lng]);
         }
       });
 
-      // Fit bounds if guards exist
-      if (guards.length > 0) {
-        const bounds = guards.filter(g => g.lat && g.lng).map(g => [g.lat, g.lng]);
-        if (bounds.length > 0) {
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
-        }
+      // Fit bounds to show all markers
+      if (allBounds.length > 0) {
+        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 14 });
       }
     }
 
