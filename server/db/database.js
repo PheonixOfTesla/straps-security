@@ -1,268 +1,277 @@
-// Simple in-memory database for Vercel serverless
-import bcrypt from 'bcryptjs';
+// Supabase database wrapper for Straps Security
+import { supabase } from './supabase.js';
 
-// In-memory data store
-const data = {
-  users: [],
-  locations: [],
-  guard_status: [],
-  checkins: [],
-  shifts: [],
-  availability: [],
-  shift_notes: [],
-  activity_log: [],
-  location_history: []
-};
-
-let initialized = false;
-
-function initDB() {
-  if (initialized) return;
-
-  // Seed admin
-  const adminHash = bcrypt.hashSync('straps2024', 10);
-  data.users.push({
-    id: 1, username: 'charles', password_hash: adminHash,
-    name: 'Charles Admin', initials: 'CA', color: '#e8b84b', role: 'admin'
-  });
-
-  // Seed guards
-  const guardHash = bcrypt.hashSync('guard123', 10);
-  const guards = [
-    { id: 2, username: 'marcus', name: 'Marcus Thompson', initials: 'MT', color: '#3b82f6' },
-    { id: 3, username: 'deja', name: 'Deja Williams', initials: 'DW', color: '#22c55e' },
-    { id: 4, username: 'ray', name: 'Ray Garcia', initials: 'RG', color: '#f97316' },
-    { id: 5, username: 'tasha', name: 'Tasha Brown', initials: 'TB', color: '#a855f7' },
-    { id: 6, username: 'luis', name: 'Luis Martinez', initials: 'LM', color: '#06b6d4' },
-  ];
-  guards.forEach(g => {
-    data.users.push({ ...g, password_hash: guardHash, role: 'guard' });
-  });
-
-  // Seed locations
-  data.locations.push(
-    { id: 1, name: 'Ocean Palm Resort', address: '123 Beach Blvd', lat: 25.7617, lng: -80.1918 },
-    { id: 2, name: 'Sandbar Plaza', address: '456 Marina Way', lat: 25.7650, lng: -80.1850 },
-    { id: 3, name: 'Sunset Bay', address: '789 Harbor Dr', lat: 25.7580, lng: -80.1980 }
-  );
-
-  // Seed guard statuses
-  const statuses = ['active', 'active', 'break', 'active', 'active'];
-  const zones = ['Lobby', 'Poolside', 'Entrance', 'Perimeter', 'Parking'];
-  guards.forEach((g, i) => {
-    const loc = data.locations[i % 3];
-    data.guard_status.push({
-      id: i + 1,
-      guard_id: g.id,
-      status: statuses[i],
-      current_location_id: loc.id,
-      zone: zones[i],
-      lat: loc.lat + (Math.random() - 0.5) * 0.01,
-      lng: loc.lng + (Math.random() - 0.5) * 0.01,
-      last_updated: new Date().toISOString()
-    });
-  });
-
-  // Seed notes
-  data.shift_notes.push(
-    { id: 1, guard_id: 2, location_id: 1, content: 'Suspicious vehicle in lot C — silver sedan, no plates. Photo taken.', note_type: 'incident', created_at: new Date().toISOString() },
-    { id: 2, guard_id: 5, location_id: 3, content: 'Gate 2 lock sticky, maintenance notified.', note_type: 'maintenance', created_at: new Date().toISOString() }
-  );
-
-  // Seed activity
-  data.activity_log.push(
-    { id: 1, guard_id: 5, location_id: 3, action: 'checkin', details: 'Tasha Brown arrived at Sunset Bay', timestamp: new Date().toISOString() },
-    { id: 2, guard_id: 4, action: 'break_start', details: 'Ray Garcia started break', timestamp: new Date().toISOString() },
-    { id: 3, guard_id: 2, location_id: 1, action: 'patrol', details: 'Marcus Thompson completed lobby sweep', timestamp: new Date().toISOString() }
-  );
-
-  initialized = true;
-  console.log('Database initialized with seed data!');
+// Initialize - check connection
+async function initDB() {
+  const { data, error } = await supabase.from('users').select('count').limit(1);
+  if (error) {
+    console.error('Database connection error:', error.message);
+  } else {
+    console.log('Connected to Supabase!');
+  }
 }
 
-// Helper to get next ID
-function nextId(table) {
-  const items = data[table];
-  return items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-}
-
-// Query helpers
+// Query helper that mimics the prepare().get/all/run pattern
 function prepare(sql) {
   return {
-    run: (...params) => {
-      // Parse simple INSERT/UPDATE/DELETE
-      const result = { lastInsertRowid: 0 };
-
+    async run(...params) {
+      // Handle INSERT operations
       if (sql.includes('INSERT INTO users')) {
-        const id = nextId('users');
-        data.users.push({ id, username: params[0], password_hash: params[1], name: params[2], initials: params[3], color: params[4], role: params[5] || 'guard' });
-        result.lastInsertRowid = id;
+        const { data, error } = await supabase.from('users').insert({
+          username: params[0], password_hash: params[1], name: params[2],
+          initials: params[3], color: params[4], role: params[5] || 'guard'
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO checkins')) {
-        const id = nextId('checkins');
-        data.checkins.push({ id, guard_id: params[0], location_id: params[1], type: params[2] || 'checkin', lat: params[3], lng: params[4], timestamp: new Date().toISOString() });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO checkins')) {
+        const { data } = await supabase.from('checkins').insert({
+          guard_id: params[0], location_id: params[1], type: 'checkin',
+          lat: params[2], lng: params[3]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO guard_status')) {
-        const id = nextId('guard_status');
-        data.guard_status.push({ id, guard_id: params[0], status: params[1] || 'active', current_location_id: params[2], zone: params[3], lat: params[4], lng: params[5], last_updated: new Date().toISOString() });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO guard_status')) {
+        const { data } = await supabase.from('guard_status').insert({
+          guard_id: params[0], status: params[1] || 'active',
+          current_location_id: params[2], zone: params[3], lat: params[4], lng: params[5]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO activity_log')) {
-        const id = nextId('activity_log');
-        data.activity_log.push({ id, guard_id: params[0], location_id: params[1], action: params[2], details: params[3], timestamp: new Date().toISOString() });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO activity_log')) {
+        const { data } = await supabase.from('activity_log').insert({
+          guard_id: params[0], location_id: params[1], action: params[2], details: params[3]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO shift_notes')) {
-        const id = nextId('shift_notes');
-        data.shift_notes.push({ id, shift_id: params[0], guard_id: params[1], location_id: params[2], content: params[3], note_type: params[4] || 'general', created_at: new Date().toISOString() });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO shift_notes')) {
+        const { data } = await supabase.from('shift_notes').insert({
+          shift_id: params[0], guard_id: params[1], location_id: params[2],
+          content: params[3], note_type: params[4] || 'general'
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO location_history')) {
-        const id = nextId('location_history');
-        data.location_history.push({ id, guard_id: params[0], lat: params[1], lng: params[2], accuracy: params[3], timestamp: new Date().toISOString() });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO location_history')) {
+        const { data } = await supabase.from('location_history').insert({
+          guard_id: params[0], lat: params[1], lng: params[2], accuracy: params[3]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO locations')) {
-        const id = nextId('locations');
-        data.locations.push({ id, name: params[0], address: params[1], lat: params[2], lng: params[3] });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO locations')) {
+        const { data } = await supabase.from('locations').insert({
+          name: params[0], address: params[1], lat: params[2], lng: params[3]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO shifts')) {
-        const id = nextId('shifts');
-        data.shifts.push({ id, guard_id: params[0], location_id: params[1], start_time: params[2], end_time: params[3], zone: params[4], created_by: params[5] });
-        result.lastInsertRowid = id;
+      if (sql.includes('INSERT INTO shifts')) {
+        const { data } = await supabase.from('shifts').insert({
+          guard_id: params[0], location_id: params[1], start_time: params[2],
+          end_time: params[3], zone: params[4], created_by: params[5]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
-      else if (sql.includes('INSERT INTO availability')) {
-        const id = nextId('availability');
-        data.availability.push({ id, guard_id: params[0], date: params[1], start_time: params[2], end_time: params[3], available: params[4] });
-        result.lastInsertRowid = id;
-      }
-      else if (sql.includes('UPDATE guard_status')) {
-        const guardId = params[params.length - 1];
-        const gs = data.guard_status.find(s => s.guard_id === guardId);
-        if (gs) {
-          if (sql.includes('status = ?, current_location_id')) {
-            gs.status = params[0]; gs.current_location_id = params[1]; gs.zone = params[2]; gs.lat = params[3]; gs.lng = params[4];
-          } else if (sql.includes('status =')) {
-            gs.status = params[0];
-          } else if (sql.includes('lat = ?, lng = ?')) {
-            gs.lat = params[0]; gs.lng = params[1];
-          }
-          gs.last_updated = new Date().toISOString();
-        }
-      }
-      else if (sql.includes('DELETE FROM')) {
-        const table = sql.match(/DELETE FROM (\w+)/)[1];
-        const idx = data[table]?.findIndex(i => i.id === params[0]);
-        if (idx > -1) data[table].splice(idx, 1);
+      if (sql.includes('INSERT INTO availability')) {
+        const { data } = await supabase.from('availability').insert({
+          guard_id: params[0], date: params[1], start_time: params[2],
+          end_time: params[3], available: params[4]
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
       }
 
-      return result;
+      // Handle UPDATE operations
+      if (sql.includes('UPDATE guard_status') && sql.includes('status = ?, current_location_id')) {
+        await supabase.from('guard_status').update({
+          status: params[0], current_location_id: params[1], zone: params[2],
+          lat: params[3], lng: params[4], last_updated: new Date().toISOString()
+        }).eq('guard_id', params[5]);
+      } else if (sql.includes('UPDATE guard_status') && sql.includes('lat = ?, lng = ?')) {
+        await supabase.from('guard_status').update({
+          lat: params[0], lng: params[1], last_updated: new Date().toISOString()
+        }).eq('guard_id', params[2]);
+      } else if (sql.includes('UPDATE guard_status') && sql.includes('status =')) {
+        await supabase.from('guard_status').update({
+          status: params[0], last_updated: new Date().toISOString()
+        }).eq('guard_id', params[1]);
+      }
+
+      // Handle DELETE operations
+      if (sql.includes('DELETE FROM locations')) {
+        await supabase.from('locations').delete().eq('id', params[0]);
+      }
+      if (sql.includes('DELETE FROM shifts')) {
+        await supabase.from('shifts').delete().eq('id', params[0]);
+      }
+      if (sql.includes('DELETE FROM shift_notes')) {
+        await supabase.from('shift_notes').delete().eq('id', params[0]);
+      }
+      if (sql.includes('DELETE FROM availability')) {
+        await supabase.from('availability').delete().eq('id', params[0]);
+      }
+
+      return { lastInsertRowid: 0 };
     },
-    get: (...params) => {
-      initDB();
 
+    async get(...params) {
+      // Users by username
       if (sql.includes('FROM users WHERE username')) {
-        return data.users.find(u => u.username === params[0]);
+        const { data } = await supabase.from('users')
+          .select('*').eq('username', params[0]).single();
+        return data;
       }
+      // Users by id
       if (sql.includes('FROM users WHERE id')) {
-        return data.users.find(u => u.id === params[0]);
+        const { data } = await supabase.from('users')
+          .select('id, username, name, initials, color, role').eq('id', params[0]).single();
+        return data;
       }
+      // Guard status by guard_id
       if (sql.includes('FROM guard_status WHERE guard_id')) {
-        return data.guard_status.find(s => s.guard_id === params[0]);
+        const { data } = await supabase.from('guard_status')
+          .select('*').eq('guard_id', params[0]).single();
+        return data;
       }
+      // Location by id
       if (sql.includes('FROM locations WHERE id')) {
-        return data.locations.find(l => l.id === params[0]);
+        const { data } = await supabase.from('locations')
+          .select('*').eq('id', params[0]).single();
+        return data;
       }
+      // Availability
       if (sql.includes('FROM availability WHERE guard_id') && sql.includes('AND date')) {
-        return data.availability.find(a => a.guard_id === params[0] && a.date === params[1]);
+        const { data } = await supabase.from('availability')
+          .select('*').eq('guard_id', params[0]).eq('date', params[1]).single();
+        return data;
       }
+      // Shift note by id
       if (sql.includes('FROM shift_notes WHERE id')) {
-        return data.shift_notes.find(n => n.id === params[0]);
+        const { data } = await supabase.from('shift_notes')
+          .select('*').eq('id', params[0]).single();
+        return data;
       }
+      // Locations covered count
       if (sql.includes('COUNT(DISTINCT current_location_id)')) {
-        const locs = new Set(data.guard_status.filter(s => s.status !== 'offline' && s.current_location_id).map(s => s.current_location_id));
-        return { count: locs.size };
+        const { data } = await supabase.from('guard_status')
+          .select('current_location_id')
+          .in('status', ['active', 'break'])
+          .not('current_location_id', 'is', null);
+        const uniqueLocs = new Set(data?.map(d => d.current_location_id) || []);
+        return { count: uniqueLocs.size };
       }
-
-      // Complex guard query
+      // Guard with status
       if (sql.includes('FROM users u') && sql.includes('LEFT JOIN guard_status') && sql.includes('WHERE u.id')) {
-        const guard = data.users.find(u => u.id === params[0] && u.role === 'guard');
+        const { data: guard } = await supabase.from('users')
+          .select('*').eq('id', params[0]).eq('role', 'guard').single();
         if (!guard) return undefined;
-        const status = data.guard_status.find(s => s.guard_id === guard.id);
-        const loc = status ? data.locations.find(l => l.id === status.current_location_id) : null;
-        return { ...guard, ...(status || {}), location_id: loc?.id, location_name: loc?.name };
+        const { data: status } = await supabase.from('guard_status')
+          .select('*, locations(id, name)').eq('guard_id', guard.id).single();
+        return {
+          ...guard, ...status,
+          location_id: status?.locations?.id,
+          location_name: status?.locations?.name
+        };
       }
-
       return undefined;
     },
-    all: (...params) => {
-      initDB();
 
+    async all(...params) {
+      // All guards with status
       if (sql.includes('FROM users') && sql.includes("role = 'guard'")) {
-        return data.users.filter(u => u.role === 'guard').map(guard => {
-          const status = data.guard_status.find(s => s.guard_id === guard.id);
-          const loc = status ? data.locations.find(l => l.id === status.current_location_id) : null;
-          return { ...guard, ...(status || {}), location_id: loc?.id, location_name: loc?.name };
-        });
+        const { data: guards } = await supabase.from('users')
+          .select('*').eq('role', 'guard').order('name');
+        const { data: statuses } = await supabase.from('guard_status')
+          .select('*, locations(id, name)');
+        return guards?.map(g => {
+          const s = statuses?.find(st => st.guard_id === g.id);
+          return {
+            ...g, ...s,
+            location_id: s?.locations?.id,
+            location_name: s?.locations?.name
+          };
+        }) || [];
       }
+      // All locations
       if (sql.includes('FROM locations ORDER')) {
-        return data.locations;
+        const { data } = await supabase.from('locations').select('*').order('name');
+        return data || [];
       }
+      // Status counts
       if (sql.includes('FROM guard_status') && sql.includes('GROUP BY status')) {
+        const { data } = await supabase.from('guard_status').select('status');
         const counts = {};
-        data.guard_status.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
+        data?.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
         return Object.entries(counts).map(([status, count]) => ({ status, count }));
       }
+      // Checkins by guard and date
       if (sql.includes('FROM checkins') && sql.includes('guard_id = ?')) {
-        return data.checkins.filter(c => c.guard_id === params[0] && c.timestamp?.startsWith(params[1]));
+        const { data } = await supabase.from('checkins')
+          .select('*').eq('guard_id', params[0])
+          .gte('timestamp', params[1]).lt('timestamp', params[1] + 'T23:59:59')
+          .order('timestamp');
+        return data || [];
       }
+      // Today's activity
       if (sql.includes('FROM activity_log') && sql.includes('date(a.timestamp)')) {
         const today = params[0];
-        return data.activity_log.filter(a => a.timestamp?.startsWith(today)).map(a => {
-          const guard = data.users.find(u => u.id === a.guard_id);
-          const loc = data.locations.find(l => l.id === a.location_id);
-          return { ...a, guard_name: guard?.name, initials: guard?.initials, color: guard?.color, location_name: loc?.name };
-        }).reverse();
+        const { data } = await supabase.from('activity_log')
+          .select('*, users(name, initials, color), locations(name)')
+          .gte('timestamp', today).lt('timestamp', today + 'T23:59:59')
+          .order('timestamp', { ascending: false });
+        return data?.map(a => ({
+          ...a, guard_name: a.users?.name, initials: a.users?.initials,
+          color: a.users?.color, location_name: a.locations?.name
+        })) || [];
       }
+      // Activity with limit
       if (sql.includes('FROM activity_log') && sql.includes('LIMIT')) {
-        return data.activity_log.slice(-params[0]).reverse().map(a => {
-          const guard = data.users.find(u => u.id === a.guard_id);
-          const loc = data.locations.find(l => l.id === a.location_id);
-          return { ...a, guard_name: guard?.name, initials: guard?.initials, color: guard?.color, location_name: loc?.name };
-        });
+        const { data } = await supabase.from('activity_log')
+          .select('*, users(name, initials, color), locations(name)')
+          .order('timestamp', { ascending: false }).limit(params[0]);
+        return data?.map(a => ({
+          ...a, guard_name: a.users?.name, initials: a.users?.initials,
+          color: a.users?.color, location_name: a.locations?.name
+        })) || [];
       }
+      // Today's notes
       if (sql.includes('FROM shift_notes') && sql.includes('date(n.created_at)')) {
         const today = params[0];
-        return data.shift_notes.filter(n => n.created_at?.startsWith(today)).map(n => {
-          const guard = data.users.find(u => u.id === n.guard_id);
-          const loc = data.locations.find(l => l.id === n.location_id);
-          return { ...n, guard_name: guard?.name, initials: guard?.initials, color: guard?.color, location_name: loc?.name };
-        }).reverse();
+        const { data } = await supabase.from('shift_notes')
+          .select('*, users(name, initials, color), locations(name)')
+          .gte('created_at', today).lt('created_at', today + 'T23:59:59')
+          .order('created_at', { ascending: false });
+        return data?.map(n => ({
+          ...n, guard_name: n.users?.name, initials: n.users?.initials,
+          color: n.users?.color, location_name: n.locations?.name
+        })) || [];
       }
+      // Notes by guard
       if (sql.includes('FROM shift_notes') && sql.includes('guard_id = ?')) {
-        return data.shift_notes.filter(n => n.guard_id === params[0]).slice(0, params[1] || 50).map(n => {
-          const guard = data.users.find(u => u.id === n.guard_id);
-          const loc = data.locations.find(l => l.id === n.location_id);
-          return { ...n, guard_name: guard?.name, initials: guard?.initials, color: guard?.color, location_name: loc?.name };
-        }).reverse();
+        const { data } = await supabase.from('shift_notes')
+          .select('*, users(name, initials, color), locations(name)')
+          .eq('guard_id', params[0])
+          .order('created_at', { ascending: false }).limit(params[1] || 50);
+        return data?.map(n => ({
+          ...n, guard_name: n.users?.name, initials: n.users?.initials,
+          color: n.users?.color, location_name: n.locations?.name
+        })) || [];
       }
+      // Active guards for map
       if (sql.includes("status IN ('active', 'break')")) {
-        return data.guard_status.filter(s => s.status === 'active' || s.status === 'break').map(s => {
-          const guard = data.users.find(u => u.id === s.guard_id);
-          const loc = data.locations.find(l => l.id === s.current_location_id);
-          return { ...guard, ...s, location_name: loc?.name };
-        });
+        const { data } = await supabase.from('guard_status')
+          .select('*, users(id, name, initials, color), locations(name)')
+          .in('status', ['active', 'break']);
+        return data?.map(s => ({
+          ...s.users, ...s, location_name: s.locations?.name
+        })) || [];
       }
+      // Shifts
       if (sql.includes('FROM shifts')) {
-        return data.shifts.map(s => {
-          const guard = data.users.find(u => u.id === s.guard_id);
-          const loc = data.locations.find(l => l.id === s.location_id);
-          return { ...s, guard_name: guard?.name, initials: guard?.initials, color: guard?.color, location_name: loc?.name };
-        });
+        const { data } = await supabase.from('shifts')
+          .select('*, users(name, initials, color), locations(name)')
+          .order('start_time');
+        return data?.map(s => ({
+          ...s, guard_name: s.users?.name, initials: s.users?.initials,
+          color: s.users?.color, location_name: s.locations?.name
+        })) || [];
       }
-
       return [];
     }
   };

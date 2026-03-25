@@ -1,8 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import seedData from './db/init.js';
+import { initDB } from './db/database.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -52,14 +53,17 @@ app.get('/', (req, res) => {
   res.sendFile(join(__dirname, '../client/index.html'));
 });
 
-// Initialize database and start server
-seedData().then(() => {
+// Initialize and start
+initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Straps Security Server running on http://localhost:${PORT}`);
   });
 }).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
+  console.error('Failed to initialize:', err);
+  // Start anyway for serverless
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
 
 export default app;
