@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0c10">
+  <title>Guard View - STRAPS</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e8b84b'><path d='M12 2L4 6v6c0 5.5 3.5 10.7 8 12 4.5-1.3 8-6.5 8-12V6l-8-4z'/></svg>">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">STRAPS</div>
+    </div>
+    <div class="topbar-right">
+      <div class="avatar" id="user-avatar">G</div>
+      <span id="user-name">Guard</span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="guard-container">
+    <!-- Status Card -->
+    <div class="guard-status-card">
+      <div class="guard-status-badge" id="status-badge">OFFLINE</div>
+      <div class="current-location" id="current-location">Not checked in</div>
+      <div class="current-zone" id="current-zone">-</div>
+
+      <!-- Check-in Section (shown when offline) -->
+      <div id="checkin-section">
+        <select class="location-select" id="location-select">
+          <option value="">Select Location</option>
+        </select>
+        <input type="text" class="field" id="zone-input" placeholder="Zone (e.g., Lobby, Parking)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);margin-bottom:12px">
+        <button class="btn checkin-btn" onclick="checkIn()">CHECK IN</button>
+      </div>
+
+      <!-- Active Section (shown when checked in) -->
+      <div id="active-section" style="display:none">
+        <button class="btn checkin-btn" id="break-btn" onclick="toggleBreak()">START BREAK</button>
+        <button class="btn btn-danger checkin-btn" onclick="checkOut()" style="margin-top:8px">CHECK OUT</button>
+      </div>
+    </div>
+
+    <!-- Current Shift -->
+    <div class="shift-info">
+      <h3>CURRENT SHIFT</h3>
+      <div class="shift-detail">
+        <span class="label">Location</span>
+        <span id="shift-location">-</span>
+      </div>
+      <div class="shift-detail">
+        <span class="label">Time</span>
+        <span id="shift-time">-</span>
+      </div>
+      <div class="shift-detail">
+        <span class="label">Hours Today</span>
+        <span id="shift-hours">0h</span>
+      </div>
+    </div>
+
+    <!-- Add Note -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-title">ADD NOTE</span>
+      </div>
+      <div style="padding:12px">
+        <select class="location-select" id="note-type" style="margin-bottom:8px">
+          <option value="general">General</option>
+          <option value="incident">Incident</option>
+          <option value="observation">Observation</option>
+          <option value="maintenance">Maintenance</option>
+        </select>
+        <textarea class="note-input" id="note-content" rows="3" placeholder="Describe the incident, observation, or issue..."></textarea>
+        <button class="add-note-btn" onclick="addNote()" style="margin-top:8px">Submit Note</button>
+      </div>
+    </div>
+
+    <!-- Recent Notes -->
+    <div class="section" style="margin-top:16px">
+      <div class="section-header">
+        <span class="section-title">MY RECENT NOTES</span>
+      </div>
+      <div class="notes-body" id="my-notes"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // Auth check
+    if (!requireAuth()) {
+      // Redirected
+    }
+
+    const user = getUser();
+    document.getElementById('user-name').textContent = user?.name || 'Guard';
+    document.getElementById('user-avatar').textContent = user?.initials?.[0] || 'G';
+
+    let currentStatus = 'offline';
+    let currentLocation = null;
+    let watchId = null;
+
+    // Load initial data
+    async function loadGuardData() {
+      try {
+        // Load locations
+        const locRes = await api('/locations');
+        const locData = await locRes.json();
+        const select = document.getElementById('location-select');
+        select.innerHTML = '<option value="">Select Location</option>' +
+          locData.locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+
+        // Load guard status
+        const guardRes = await api(`/guards/${user.id}`);
+        const guardData = await guardRes.json();
+        updateStatus(guardData.guard);
+
+        // Load hours
+        const hoursRes = await api(`/guards/${user.id}/hours`);
+        const hoursData = await hoursRes.json();
+        document.getElementById('shift-hours').textContent = hoursData.hours + 'h';
+
+        // Load my notes
+        const notesRes = await api(`/notes?guard_id=${user.id}&limit=5`);
+        const notesData = await notesRes.json();
+        updateMyNotes(notesData.notes);
+
+      } catch (err) {
+        console.error('Failed to load data:', err);
+      }
+    }
+
+    function updateStatus(guard) {
+      currentStatus = guard.status || 'offline';
+      currentLocation = guard.location_id;
+
+      const badge = document.getElementById('status-badge');
+      const checkinSection = document.getElementById('checkin-section');
+      const activeSection = document.getElementById('active-section');
+      const breakBtn = document.getElementById('break-btn');
+
+      if (currentStatus === 'offline') {
+        badge.textContent = 'OFFLINE';
+        badge.style.background = 'rgba(107,114,128,0.2)';
+        badge.style.color = '#6b7280';
+        document.getElementById('current-location').textContent = 'Not checked in';
+        document.getElementById('current-zone').textContent = '-';
+        checkinSection.style.display = 'block';
+        activeSection.style.display = 'none';
+      } else {
+        badge.textContent = currentStatus === 'active' ? 'ON DUTY' : 'ON BREAK';
+        badge.style.background = currentStatus === 'active' ? 'rgba(34,197,94,0.2)' : 'rgba(232,184,75,0.2)';
+        badge.style.color = currentStatus === 'active' ? '#22c55e' : '#e8b84b';
+        document.getElementById('current-location').textContent = guard.location_name || 'Unknown';
+        document.getElementById('current-zone').textContent = guard.zone || '-';
+        document.getElementById('shift-location').textContent = guard.location_name || '-';
+        checkinSection.style.display = 'none';
+        activeSection.style.display = 'block';
+        breakBtn.textContent = currentStatus === 'break' ? 'END BREAK' : 'START BREAK';
+        breakBtn.className = currentStatus === 'break' ? 'btn checkin-btn' : 'btn btn-outline checkin-btn';
+      }
+    }
+
+    function updateMyNotes(notes) {
+      const container = document.getElementById('my-notes');
+      if (notes.length === 0) {
+        container.innerHTML = '<p style="color:var(--muted);font-size:12px">No notes yet</p>';
+        return;
+      }
+      container.innerHTML = notes.map(n => {
+        const time = new Date(n.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return `
+          <div class="note-card">
+            <div class="note-meta">${n.note_type} · ${time}</div>
+            <div class="note-text">${n.content}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // GPS tracking
+    function startTracking() {
+      if (!navigator.geolocation) {
+        console.log('Geolocation not supported');
+        return;
+      }
+
+      watchId = navigator.geolocation.watchPosition(
+        async (pos) => {
+          try {
+            await api('/guards/location', {
+              method: 'POST',
+              body: JSON.stringify({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy
+              })
+            });
+          } catch (err) {
+            console.error('Failed to update location:', err);
+          }
+        },
+        (err) => console.error('Geolocation error:', err),
+        { enableHighAccuracy: true, maximumAge: 30000 }
+      );
+    }
+
+    function stopTracking() {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+    }
+
+    // Actions
+    async function checkIn() {
+      const locationId = document.getElementById('location-select').value;
+      const zone = document.getElementById('zone-input').value.trim();
+
+      if (!locationId) {
+        alert('Please select a location');
+        return;
+      }
+
+      try {
+        // Get current position
+        let lat, lng;
+        if (navigator.geolocation) {
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+          });
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+        }
+
+        await api('/guards/checkin', {
+          method: 'POST',
+          body: JSON.stringify({ location_id: parseInt(locationId), zone, lat, lng })
+        });
+
+        startTracking();
+        loadGuardData();
+      } catch (err) {
+        console.error('Check-in failed:', err);
+        alert('Check-in failed. Please try again.');
+      }
+    }
+
+    async function checkOut() {
+      if (!confirm('Are you sure you want to check out?')) return;
+
+      try {
+        let lat, lng;
+        if (navigator.geolocation) {
+          try {
+            const pos = await new Promise((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+            });
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+          } catch (e) {}
+        }
+
+        await api('/guards/checkout', {
+          method: 'POST',
+          body: JSON.stringify({ lat, lng })
+        });
+
+        stopTracking();
+        loadGuardData();
+      } catch (err) {
+        console.error('Check-out failed:', err);
+        alert('Check-out failed. Please try again.');
+      }
+    }
+
+    async function toggleBreak() {
+      try {
+        const endpoint = currentStatus === 'break' ? '/guards/break/end' : '/guards/break/start';
+        await api(endpoint, { method: 'POST' });
+        loadGuardData();
+      } catch (err) {
+        console.error('Break toggle failed:', err);
+      }
+    }
+
+    async function addNote() {
+      const content = document.getElementById('note-content').value.trim();
+      const noteType = document.getElementById('note-type').value;
+
+      if (!content) {
+        alert('Please enter a note');
+        return;
+      }
+
+      try {
+        await api('/notes', {
+          method: 'POST',
+          body: JSON.stringify({ content, note_type: noteType })
+        });
+        document.getElementById('note-content').value = '';
+        loadGuardData();
+        alert('Note submitted successfully');
+      } catch (err) {
+        console.error('Failed to add note:', err);
+        alert('Failed to submit note');
+      }
+    }
+
+    // Initialize
+    loadGuardData();
+
+    // If already checked in, start tracking
+    if (currentStatus !== 'offline') {
+      startTracking();
+    }
+
+    // Refresh data periodically
+    setInterval(loadGuardData, 60000);
+  </script>
+</body>
+</html>
