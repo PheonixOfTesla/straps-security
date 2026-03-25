@@ -95,10 +95,18 @@ function prepare(sql) {
         await supabase.from('guard_status').update({
           lat: params[0], lng: params[1], last_updated: new Date().toISOString()
         }).eq('guard_id', params[2]);
-      } else if (sql.includes('UPDATE guard_status') && sql.includes('status =')) {
+      } else if (sql.includes("UPDATE guard_status") && sql.includes("status = 'offline'")) {
         await supabase.from('guard_status').update({
-          status: params[0], last_updated: new Date().toISOString()
-        }).eq('guard_id', params[1]);
+          status: 'offline', last_updated: new Date().toISOString()
+        }).eq('guard_id', params[0]);
+      } else if (sql.includes("UPDATE guard_status") && sql.includes("status = 'active'")) {
+        await supabase.from('guard_status').update({
+          status: 'active', last_updated: new Date().toISOString()
+        }).eq('guard_id', params[0]);
+      } else if (sql.includes("UPDATE guard_status") && sql.includes("status = 'break'")) {
+        await supabase.from('guard_status').update({
+          status: 'break', last_updated: new Date().toISOString()
+        }).eq('guard_id', params[0]);
       }
 
       // Handle UPDATE users

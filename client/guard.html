@@ -14,6 +14,7 @@
       <div class="topbar-logo">STRAPS</div>
     </div>
     <div class="topbar-right">
+      <span id="clock" style="font-size:14px;font-weight:500"></span>
       <div class="avatar" id="user-avatar">G</div>
       <span id="user-name">Guard</span>
       <button class="logout-btn" onclick="logout()">Logout</button>
@@ -97,7 +98,15 @@
     document.getElementById('user-name').textContent = user?.name || 'Guard';
     document.getElementById('user-avatar').textContent = user?.initials?.[0] || 'G';
 
+    // Clock
+    function updateClock() {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
     let currentStatus = 'offline';
+    let checkinTime = null;
     let currentLocation = null;
     let watchId = null;
 
@@ -146,8 +155,10 @@
         badge.style.color = '#6b7280';
         document.getElementById('current-location').textContent = 'Not checked in';
         document.getElementById('current-zone').textContent = '-';
+        document.getElementById('shift-time').textContent = '-';
         checkinSection.style.display = 'block';
         activeSection.style.display = 'none';
+        checkinTime = null;
       } else {
         badge.textContent = currentStatus === 'active' ? 'ON DUTY' : 'ON BREAK';
         badge.style.background = currentStatus === 'active' ? 'rgba(34,197,94,0.2)' : 'rgba(232,184,75,0.2)';
@@ -155,6 +166,10 @@
         document.getElementById('current-location').textContent = guard.location_name || 'Unknown';
         document.getElementById('current-zone').textContent = guard.zone || '-';
         document.getElementById('shift-location').textContent = guard.location_name || '-';
+        if (guard.last_updated) {
+          const updated = new Date(guard.last_updated);
+          document.getElementById('shift-time').textContent = updated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' - Now';
+        }
         checkinSection.style.display = 'none';
         activeSection.style.display = 'block';
         breakBtn.textContent = currentStatus === 'break' ? 'END BREAK' : 'START BREAK';

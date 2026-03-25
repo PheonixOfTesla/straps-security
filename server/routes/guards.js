@@ -112,7 +112,7 @@ router.post('/checkout', verifyToken, async (req, res) => {
     }
 
     await prepare(`INSERT INTO checkins (guard_id, location_id, type, lat, lng) VALUES (?, ?, 'checkout', ?, ?)`).run(guardId, status.current_location_id, lat || status.lat, lng || status.lng);
-    await prepare(`UPDATE guard_status SET status = 'offline', last_updated = datetime('now') WHERE guard_id = ?`).run('offline', guardId);
+    await prepare(`UPDATE guard_status SET status = 'offline', last_updated = datetime('now') WHERE guard_id = ?`).run(guardId);
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
     const location = await prepare('SELECT name FROM locations WHERE id = ?').get(status.current_location_id);
@@ -128,10 +128,10 @@ router.post('/checkout', verifyToken, async (req, res) => {
 router.post('/break/start', verifyToken, async (req, res) => {
   try {
     const guardId = req.user.id;
-    await prepare(`UPDATE guard_status SET status = 'break', last_updated = datetime('now') WHERE guard_id = ?`).run('break', guardId);
+    await prepare(`UPDATE guard_status SET status = 'break', last_updated = datetime('now') WHERE guard_id = ?`).run(guardId);
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
-    await prepare(`INSERT INTO activity_log (guard_id, action, details) VALUES (?, 'break_start', ?)`).run(guardId, null, 'break_start', `${guard.name} started break`);
+    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, ?, ?)`).run(guardId, null, 'break_start', `${guard.name} started break`);
 
     res.json({ success: true });
   } catch (err) {
@@ -143,10 +143,10 @@ router.post('/break/start', verifyToken, async (req, res) => {
 router.post('/break/end', verifyToken, async (req, res) => {
   try {
     const guardId = req.user.id;
-    await prepare(`UPDATE guard_status SET status = 'active', last_updated = datetime('now') WHERE guard_id = ?`).run('active', guardId);
+    await prepare(`UPDATE guard_status SET status = 'active', last_updated = datetime('now') WHERE guard_id = ?`).run(guardId);
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
-    await prepare(`INSERT INTO activity_log (guard_id, action, details) VALUES (?, 'break_end', ?)`).run(guardId, null, 'break_end', `${guard.name} ended break`);
+    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, ?, ?)`).run(guardId, null, 'break_end', `${guard.name} ended break`);
 
     res.json({ success: true });
   } catch (err) {
