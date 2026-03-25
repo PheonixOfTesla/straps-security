@@ -16,10 +16,60 @@
       <div class="live-badge"><div class="pulse"></div>LIVE OPS</div>
     </div>
     <div class="topbar-right">
+      <button class="admin-btn" onclick="showModal('guards-modal')">+ Guard</button>
+      <button class="admin-btn" onclick="showModal('locations-modal')">+ Location</button>
       <span id="clock"></span>
       <div class="avatar" id="user-avatar">C</div>
       <span id="user-name">Admin</span>
       <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Guards Modal -->
+  <div class="modal" id="guards-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Manage Guards</h3>
+        <button class="close-btn" onclick="hideModal('guards-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="guards-list"></div>
+        <div class="form-divider">Add New Guard</div>
+        <input type="text" id="guard-name" placeholder="Full Name" class="modal-input">
+        <input type="text" id="guard-username" placeholder="Username" class="modal-input">
+        <input type="password" id="guard-password" placeholder="Password" class="modal-input">
+        <select id="guard-type" class="modal-input">
+          <option value="security">Security</option>
+          <option value="patrol">Patrol</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="armed">Armed</option>
+          <option value="unarmed">Unarmed</option>
+        </select>
+        <input type="color" id="guard-color" value="#3b82f6" class="modal-color">
+        <button class="modal-btn" onclick="addGuard()">Add Guard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Locations Modal -->
+  <div class="modal" id="locations-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Manage Locations</h3>
+        <button class="close-btn" onclick="hideModal('locations-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="locations-list"></div>
+        <div class="form-divider">Add New Location</div>
+        <input type="text" id="loc-name" placeholder="Location Name" class="modal-input">
+        <input type="text" id="loc-address" placeholder="Address" class="modal-input">
+        <div class="latlong-row">
+          <input type="number" step="any" id="loc-lat" placeholder="Latitude" class="modal-input">
+          <input type="number" step="any" id="loc-lng" placeholder="Longitude" class="modal-input">
+        </div>
+        <button class="modal-btn secondary" onclick="getCurrentLocation()">Use Current Location</button>
+        <button class="modal-btn" onclick="addLocation()">Add Location</button>
+      </div>
     </div>
   </div>
 
@@ -241,6 +291,160 @@
 
     // Refresh every 30 seconds
     setInterval(loadDashboard, 30000);
+
+    // Modal functions
+    function showModal(id) {
+      document.getElementById(id).classList.add('active');
+      if (id === 'guards-modal') loadGuardsList();
+      if (id === 'locations-modal') loadLocationsList();
+    }
+
+    function hideModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    async function loadGuardsList() {
+      try {
+        const res = await api('/auth/users');
+        const data = await res.json();
+        const guards = data.users.filter(u => u.role === 'guard');
+        document.getElementById('guards-list').innerHTML = guards.map(g => `
+          <div class="list-item">
+            <div class="list-avatar" style="background:${g.color}">${g.initials}</div>
+            <div class="list-info">
+              <div class="list-name">${g.name}</div>
+              <div class="list-sub">${g.username} · ${g.guard_type || 'security'}</div>
+            </div>
+            <button class="delete-btn" onclick="deleteGuard(${g.id})">&times;</button>
+          </div>
+        `).join('') || '<div class="empty-text">No guards yet</div>';
+      } catch (err) {
+        console.error('Failed to load guards:', err);
+      }
+    }
+
+    async function loadLocationsList() {
+      try {
+        const res = await api('/locations');
+        const data = await res.json();
+        document.getElementById('locations-list').innerHTML = data.locations.map(l => `
+          <div class="list-item">
+            <div class="list-icon">📍</div>
+            <div class="list-info">
+              <div class="list-name">${l.name}</div>
+              <div class="list-sub">${l.address || 'No address'}</div>
+            </div>
+            <button class="delete-btn" onclick="deleteLocation(${l.id})">&times;</button>
+          </div>
+        `).join('') || '<div class="empty-text">No locations yet</div>';
+      } catch (err) {
+        console.error('Failed to load locations:', err);
+      }
+    }
+
+    async function addGuard() {
+      const name = document.getElementById('guard-name').value.trim();
+      const username = document.getElementById('guard-username').value.trim();
+      const password = document.getElementById('guard-password').value;
+      const guard_type = document.getElementById('guard-type').value;
+      const color = document.getElementById('guard-color').value;
+
+      if (!name || !username || !password) {
+        alert('Please fill all fields');
+        return;
+      }
+
+      try {
+        const res = await api('/auth/users', {
+          method: 'POST',
+          body: JSON.stringify({ name, username, password, guard_type, color })
+        });
+        if (res.ok) {
+          document.getElementById('guard-name').value = '';
+          document.getElementById('guard-username').value = '';
+          document.getElementById('guard-password').value = '';
+          loadGuardsList();
+          loadDashboard();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to add guard');
+        }
+      } catch (err) {
+        alert('Failed to add guard');
+      }
+    }
+
+    async function deleteGuard(id) {
+      if (!confirm('Delete this guard?')) return;
+      try {
+        await api('/auth/users/' + id, { method: 'DELETE' });
+        loadGuardsList();
+        loadDashboard();
+      } catch (err) {
+        alert('Failed to delete guard');
+      }
+    }
+
+    async function addLocation() {
+      const name = document.getElementById('loc-name').value.trim();
+      const address = document.getElementById('loc-address').value.trim();
+      const lat = parseFloat(document.getElementById('loc-lat').value) || null;
+      const lng = parseFloat(document.getElementById('loc-lng').value) || null;
+
+      if (!name) {
+        alert('Please enter a location name');
+        return;
+      }
+
+      try {
+        const res = await api('/locations', {
+          method: 'POST',
+          body: JSON.stringify({ name, address, lat, lng })
+        });
+        if (res.ok) {
+          document.getElementById('loc-name').value = '';
+          document.getElementById('loc-address').value = '';
+          document.getElementById('loc-lat').value = '';
+          document.getElementById('loc-lng').value = '';
+          loadLocationsList();
+          loadDashboard();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to add location');
+        }
+      } catch (err) {
+        alert('Failed to add location');
+      }
+    }
+
+    async function deleteLocation(id) {
+      if (!confirm('Delete this location?')) return;
+      try {
+        await api('/locations/' + id, { method: 'DELETE' });
+        loadLocationsList();
+        loadDashboard();
+      } catch (err) {
+        alert('Failed to delete location');
+      }
+    }
+
+    function getCurrentLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          document.getElementById('loc-lat').value = pos.coords.latitude.toFixed(6);
+          document.getElementById('loc-lng').value = pos.coords.longitude.toFixed(6);
+        }, err => {
+          alert('Could not get location');
+        });
+      }
+    }
+
+    // Close modal on outside click
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', e => {
+        if (e.target === modal) hideModal(modal.id);
+      });
+    });
   </script>
 </body>
 </html>
