@@ -409,15 +409,37 @@
       }
     }
 
+    async function geocodeAddress(address) {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+        const data = await res.json();
+        if (data && data.length > 0) {
+          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        }
+      } catch (err) {
+        console.error('Geocoding failed:', err);
+      }
+      return null;
+    }
+
     async function addLocation() {
       const name = document.getElementById('loc-name').value.trim();
       const address = document.getElementById('loc-address').value.trim();
-      const lat = parseFloat(document.getElementById('loc-lat').value) || null;
-      const lng = parseFloat(document.getElementById('loc-lng').value) || null;
+      let lat = parseFloat(document.getElementById('loc-lat').value) || null;
+      let lng = parseFloat(document.getElementById('loc-lng').value) || null;
 
       if (!name) {
         alert('Please enter a location name');
         return;
+      }
+
+      // Auto-geocode if address provided but no coordinates
+      if (address && (!lat || !lng)) {
+        const coords = await geocodeAddress(address);
+        if (coords) {
+          lat = coords.lat;
+          lng = coords.lng;
+        }
       }
 
       try {
