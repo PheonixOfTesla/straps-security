@@ -201,8 +201,8 @@ function prepare(sql) {
     },
 
     async all(...params) {
-      // All users (for admin)
-      if (sql.includes('FROM users ORDER BY name') && !sql.includes('role')) {
+      // All users (for admin) - matches SELECT ... FROM users ORDER BY name (without WHERE role =)
+      if (sql.includes('FROM users ORDER BY name') && !sql.includes("role = '")) {
         const { data } = await supabase.from('users')
           .select('id, username, name, initials, color, role, guard_type')
           .order('name');
