@@ -16,6 +16,14 @@ function prepare(sql) {
   return {
     async run(...params) {
       // Handle INSERT operations
+      if (sql.includes('INSERT INTO users') && sql.includes('guard_type')) {
+        const { data, error } = await supabase.from('users').insert({
+          username: params[0], password_hash: params[1], name: params[2],
+          initials: params[3], color: params[4], role: params[5] || 'guard',
+          guard_type: params[6] || 'security'
+        }).select('id').single();
+        return { lastInsertRowid: data?.id || 0 };
+      }
       if (sql.includes('INSERT INTO users')) {
         const { data, error } = await supabase.from('users').insert({
           username: params[0], password_hash: params[1], name: params[2],
@@ -93,7 +101,27 @@ function prepare(sql) {
         }).eq('guard_id', params[1]);
       }
 
+      // Handle UPDATE users
+      if (sql.includes('UPDATE users') && sql.includes('password_hash')) {
+        await supabase.from('users').update({ password_hash: params[0] }).eq('id', params[1]);
+      }
+      if (sql.includes('UPDATE users') && sql.includes('COALESCE')) {
+        const updates = {};
+        if (params[0]) updates.name = params[0];
+        if (params[1]) updates.color = params[1];
+        if (params[2]) updates.guard_type = params[2];
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('users').update(updates).eq('id', params[3]);
+        }
+      }
+
       // Handle DELETE operations
+      if (sql.includes('DELETE FROM guard_status WHERE guard_id')) {
+        await supabase.from('guard_status').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM users WHERE id')) {
+        await supabase.from('users').delete().eq('id', params[0]).eq('role', params[1] || 'guard');
+      }
       if (sql.includes('DELETE FROM locations')) {
         await supabase.from('locations').delete().eq('id', params[0]);
       }
@@ -173,6 +201,13 @@ function prepare(sql) {
     },
 
     async all(...params) {
+      // All users (for admin)
+      if (sql.includes('FROM users ORDER BY name') && !sql.includes('role')) {
+        const { data } = await supabase.from('users')
+          .select('id, username, name, initials, color, role, guard_type')
+          .order('name');
+        return data || [];
+      }
       // All guards with status
       if (sql.includes('FROM users') && sql.includes("role = 'guard'")) {
         const { data: guards } = await supabase.from('users')
