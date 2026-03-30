@@ -2,11 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0a0c10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="STRAPS">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
   <title>Guard View - STRAPS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e8b84b'><path d='M12 2L4 6v6c0 5.5 3.5 10.7 8 12 4.5-1.3 8-6.5 8-12V6l-8-4z'/></svg>">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e8b84b'><path d='M12 2L4 6v6c0 5.5 3.5 10.7 8 12 4.5-1.3 8-6.5 8-12V6l-8-4z'/></svg>">
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/css/styles.css">
+  <style>
+    /* Mobile-specific overrides */
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      -webkit-text-size-adjust: 100%;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+    .topbar {
+      padding-top: calc(12px + env(safe-area-inset-top));
+    }
+    /* Larger touch targets for mobile */
+    .btn, .checkin-btn, button {
+      min-height: 48px;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    select, input {
+      font-size: 16px !important; /* Prevents iOS zoom on focus */
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    /* Prevent pull-to-refresh on mobile */
+    html, body { overscroll-behavior: none; }
+  </style>
 </head>
 <body>
   <div class="topbar">
@@ -378,65 +412,105 @@
       }
     }
 
+    // Get location with better cross-browser support
+    async function getLocation(timeout = 15000) {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          console.warn('Geolocation not supported');
+          resolve({ lat: null, lng: null });
+          return;
+        }
+
+        const options = {
+          enableHighAccuracy: true,
+          timeout: timeout,
+          maximumAge: 30000
+        };
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            });
+          },
+          (err) => {
+            console.warn('Geolocation error:', err.message);
+            // Still allow check-in without GPS
+            resolve({ lat: null, lng: null });
+          },
+          options
+        );
+      });
+    }
+
     // Actions
     async function checkIn() {
       const locationId = document.getElementById('location-select').value;
       const zone = document.getElementById('zone-input').value.trim();
+      const checkinBtn = document.getElementById('checkin-btn');
 
       if (!locationId) {
         alert('Please select a location');
         return;
       }
 
-      try {
-        // Get current position
-        let lat, lng;
-        if (navigator.geolocation) {
-          const pos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
-          });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-        }
+      // Disable button and show loading
+      checkinBtn.disabled = true;
+      checkinBtn.textContent = 'CHECKING IN...';
 
-        await api('/guards/checkin', {
+      try {
+        // Get current position (with fallback)
+        const { lat, lng } = await getLocation();
+
+        const res = await api('/guards/checkin', {
           method: 'POST',
           body: JSON.stringify({ location_id: parseInt(locationId), zone, lat, lng })
         });
 
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Check-in failed');
+        }
+
         startTracking();
-        loadGuardData();
+        await loadGuardData();
       } catch (err) {
         console.error('Check-in failed:', err);
-        alert('Check-in failed. Please try again.');
+        alert(err.message || 'Check-in failed. Please try again.');
+        checkinBtn.disabled = false;
+        checkinBtn.textContent = 'CHECK IN';
       }
     }
 
     async function checkOut() {
       if (!confirm('Are you sure you want to check out?')) return;
 
-      try {
-        let lat, lng;
-        if (navigator.geolocation) {
-          try {
-            const pos = await new Promise((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
-            });
-            lat = pos.coords.latitude;
-            lng = pos.coords.longitude;
-          } catch (e) {}
-        }
+      const checkoutBtn = document.getElementById('checkout-btn');
+      checkoutBtn.disabled = true;
+      checkoutBtn.textContent = 'CHECKING OUT...';
 
-        await api('/guards/checkout', {
+      try {
+        const { lat, lng } = await getLocation(10000);
+
+        const res = await api('/guards/checkout', {
           method: 'POST',
           body: JSON.stringify({ lat, lng })
         });
 
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Check-out failed');
+        }
+
         stopTracking();
-        loadGuardData();
+        await loadGuardData();
       } catch (err) {
         console.error('Check-out failed:', err);
-        alert('Check-out failed. Please try again.');
+        alert(err.message || 'Check-out failed. Please try again.');
+        checkoutBtn.disabled = false;
+        checkoutBtn.textContent = 'CHECK OUT';
       }
     }
 
