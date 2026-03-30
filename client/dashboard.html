@@ -61,11 +61,19 @@
         <button class="close-btn" onclick="hideModal('export-modal')">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color:var(--muted);font-size:12px;margin-bottom:16px">Download data as CSV files</p>
-        <button class="modal-btn" onclick="exportGuards()" style="margin-bottom:8px">Export Guards</button>
-        <button class="modal-btn" onclick="exportLocations()" style="margin-bottom:8px">Export Locations</button>
-        <button class="modal-btn" onclick="exportActivity()" style="margin-bottom:8px">Export Activity Log</button>
-        <button class="modal-btn" onclick="exportCheckins()">Export Check-ins/Timestamps</button>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:16px">Export weekly report with all guard data</p>
+        <div style="margin-bottom:12px">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">DATE RANGE</label>
+          <div style="display:flex;gap:8px">
+            <input type="date" id="export-start" class="modal-input" style="flex:1;margin-bottom:0">
+            <input type="date" id="export-end" class="modal-input" style="flex:1;margin-bottom:0">
+          </div>
+        </div>
+        <button class="modal-btn" onclick="exportFullReport()" style="margin-bottom:8px">Export Full Report (All Guards)</button>
+        <div class="form-divider">Or export individual data</div>
+        <button class="modal-btn secondary" onclick="exportGuards()" style="margin-bottom:8px">Guards Only</button>
+        <button class="modal-btn secondary" onclick="exportLocations()" style="margin-bottom:8px">Locations Only</button>
+        <button class="modal-btn secondary" onclick="exportActivity()">Activity Log Only</button>
       </div>
     </div>
   </div>
@@ -535,6 +543,112 @@
       link.href = URL.createObjectURL(blob);
       link.download = filename;
       link.click();
+    }
+
+    // Set default date range (last 7 days)
+    document.getElementById('export-start').value = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
+    document.getElementById('export-end').value = new Date().toISOString().split('T')[0];
+
+    async function exportFullReport() {
+      const startDate = document.getElementById('export-start').value;
+      const endDate = document.getElementById('export-end').value;
+
+      if (!startDate || !endDate) {
+        alert('Please select date range');
+        return;
+      }
+
+      try {
+        // Fetch all data
+        const [guardsRes, locationsRes, activityRes, checkinsRes] = await Promise.all([
+          api('/auth/users'),
+          api('/locations'),
+          api('/dashboard/activity?limit=5000'),
+          api('/dashboard/checkins?limit=5000')
+        ]);
+
+        const guardsData = await guardsRes.json();
+        const locationsData = await locationsRes.json();
+        const activityData = await activityRes.json();
+        const checkinsData = await checkinsRes.json();
+
+        const guards = guardsData.users.filter(u => u.role === 'guard');
+        const locations = locationsData.locations;
+        const activities = activityData.activities.filter(a => {
+          const d = a.timestamp?.split('T')[0];
+          return d >= startDate && d <= endDate;
+        });
+        const checkins = (checkinsData.checkins || []).filter(c => {
+          const d = c.timestamp?.split('T')[0];
+          return d >= startDate && d <= endDate;
+        });
+
+        // Build comprehensive CSV
+        let csv = `STRAPS SECURITY - WEEKLY REPORT\n`;
+        csv += `Report Period: ${startDate} to ${endDate}\n`;
+        csv += `Generated: ${new Date().toLocaleString()}\n\n`;
+
+        // Locations summary
+        csv += `=== LOCATIONS ===\n`;
+        csv += `Name,Address,Coordinates\n`;
+        locations.forEach(l => {
+          csv += `"${l.name}","${l.address || ''}","${l.lat || ''},${l.lng || ''}"\n`;
+        });
+        csv += `\n`;
+
+        // Per-guard report
+        guards.forEach(guard => {
+          csv += `=== GUARD: ${guard.name} (${guard.username}) ===\n`;
+          csv += `Type: ${guard.guard_type || 'security'}\n\n`;
+
+          // Guard's checkins
+          const guardCheckins = checkins.filter(c => c.guard_id === guard.id);
+          csv += `CHECK-INS/OUTS:\n`;
+          csv += `Date,Time,Type,Location,Latitude,Longitude\n`;
+          guardCheckins.forEach(c => {
+            const dt = new Date(c.timestamp);
+            csv += `"${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${c.type}","${c.location_name || ''}",${c.lat || ''},${c.lng || ''}\n`;
+          });
+
+          // Calculate hours
+          let totalMinutes = 0;
+          let lastCheckin = null;
+          guardCheckins.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(c => {
+            if (c.type === 'checkin') {
+              lastCheckin = new Date(c.timestamp);
+            } else if (c.type === 'checkout' && lastCheckin) {
+              totalMinutes += (new Date(c.timestamp) - lastCheckin) / (1000 * 60);
+              lastCheckin = null;
+            }
+          });
+          csv += `\nTOTAL HOURS: ${(totalMinutes / 60).toFixed(2)}\n`;
+
+          // Guard's activity
+          const guardActivity = activities.filter(a => a.guard_id === guard.id);
+          csv += `\nACTIVITY LOG:\n`;
+          csv += `Date,Time,Action,Location,Details\n`;
+          guardActivity.forEach(a => {
+            const dt = new Date(a.timestamp);
+            csv += `"${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${a.action}","${a.location_name || ''}","${(a.details || '').replace(/"/g, '""')}"\n`;
+          });
+
+          csv += `\n\n`;
+        });
+
+        // Summary
+        csv += `=== SUMMARY ===\n`;
+        csv += `Total Guards: ${guards.length}\n`;
+        csv += `Total Locations: ${locations.length}\n`;
+        csv += `Total Check-ins: ${checkins.filter(c => c.type === 'checkin').length}\n`;
+        csv += `Total Check-outs: ${checkins.filter(c => c.type === 'checkout').length}\n`;
+        csv += `Total Activities: ${activities.length}\n`;
+
+        downloadCSV(`straps_weekly_report_${startDate}_to_${endDate}.csv`, csv);
+        hideModal('export-modal');
+      } catch (err) {
+        console.error('Export failed:', err);
+        alert('Failed to export report');
+      }
     }
 
     async function exportGuards() {
