@@ -345,9 +345,137 @@ h2 { font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 600; mar
 
 /* Guard Mobile View */
 .guard-container {
-  max-width: 420px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 16px;
+}
+
+/* Two column grid for guard info */
+.guard-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (max-width: 600px) {
+  .guard-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Activity Feed */
+.activity-feed {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.feed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.feed-item:last-child {
+  border-bottom: none;
+}
+
+.feed-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.feed-dot.checkin { background: var(--green); }
+.feed-dot.checkout { background: var(--red); }
+.feed-dot.break { background: var(--accent); }
+.feed-dot.note { background: var(--blue); }
+
+.feed-content {
+  flex: 1;
+}
+
+.feed-text {
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.feed-meta {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.feed-loading {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+
+/* Team Roster in guard view */
+.team-roster {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.team-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.team-member:last-child {
+  border-bottom: none;
+}
+
+.team-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  position: relative;
+}
+
+.team-avatar .status-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+
+.team-avatar .status-dot.active { background: var(--green); }
+.team-avatar .status-dot.break { background: var(--accent); }
+.team-avatar .status-dot.offline { background: var(--muted); }
+
+.team-info {
+  flex: 1;
+}
+
+.team-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.team-location {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .guard-status-card {
@@ -357,6 +485,9 @@ h2 { font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 600; mar
   padding: 20px;
   margin-bottom: 16px;
   text-align: center;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .guard-status-badge {
@@ -479,6 +610,9 @@ h2 { font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 600; mar
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .shift-info h3 {

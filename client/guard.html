@@ -82,7 +82,32 @@
       </div>
     </div>
 
-    <!-- Recent Notes -->
+    <!-- Two Column Layout: Activity Feed + Other Guards -->
+    <div class="guard-info-grid">
+      <!-- Left: Activity Feed -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">ACTIVITY FEED</span>
+          <span class="section-sub" id="feed-status">Live</span>
+        </div>
+        <div class="activity-feed" id="activity-feed">
+          <div class="feed-loading">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Right: Other Guards -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">TEAM STATUS</span>
+          <span class="section-sub" id="team-count">0 online</span>
+        </div>
+        <div class="team-roster" id="team-roster">
+          <div class="feed-loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- My Recent Notes -->
     <div class="section" style="margin-top:16px">
       <div class="section-header">
         <span class="section-title">MY RECENT NOTES</span>
@@ -139,9 +164,87 @@
         const notesData = await notesRes.json();
         updateMyNotes(notesData.notes);
 
+        // Load activity feed
+        const actRes = await api('/dashboard/activity?limit=20');
+        const actData = await actRes.json();
+        updateActivityFeed(actData.activities);
+
+        // Load team roster (other guards)
+        const teamRes = await api('/guards');
+        const teamData = await teamRes.json();
+        updateTeamRoster(teamData.guards);
+
       } catch (err) {
         console.error('Failed to load data:', err);
       }
+    }
+
+    function updateActivityFeed(activities) {
+      const feed = document.getElementById('activity-feed');
+      if (!activities || activities.length === 0) {
+        feed.innerHTML = '<div class="feed-loading">No recent activity</div>';
+        return;
+      }
+
+      feed.innerHTML = activities.map(a => {
+        const time = new Date(a.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const date = new Date(a.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        let dotClass = 'note';
+        if (a.action === 'checkin') dotClass = 'checkin';
+        else if (a.action === 'checkout') dotClass = 'checkout';
+        else if (a.action.includes('break')) dotClass = 'break';
+
+        return `
+          <div class="feed-item">
+            <div class="feed-dot ${dotClass}"></div>
+            <div class="feed-content">
+              <div class="feed-text">${a.details || a.action}</div>
+              <div class="feed-meta">${a.guard_name || 'System'} · ${time} · ${date}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateTeamRoster(guards) {
+      const roster = document.getElementById('team-roster');
+      // Filter out current user and show all guards
+      const otherGuards = guards.filter(g => g.id !== user.id);
+      const onlineCount = otherGuards.filter(g => g.status === 'active' || g.status === 'break').length;
+
+      document.getElementById('team-count').textContent = `${onlineCount} online`;
+
+      if (otherGuards.length === 0) {
+        roster.innerHTML = '<div class="feed-loading">No other guards</div>';
+        return;
+      }
+
+      // Sort: online first, then by name
+      otherGuards.sort((a, b) => {
+        const aOnline = a.status === 'active' || a.status === 'break';
+        const bOnline = b.status === 'active' || b.status === 'break';
+        if (aOnline && !bOnline) return -1;
+        if (!aOnline && bOnline) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      roster.innerHTML = otherGuards.map(g => {
+        const statusClass = g.status === 'active' ? 'active' : g.status === 'break' ? 'break' : 'offline';
+        const statusText = g.status === 'active' ? 'On Duty' : g.status === 'break' ? 'On Break' : 'Offline';
+
+        return `
+          <div class="team-member">
+            <div class="team-avatar" style="background:${g.color || '#3b82f6'}">
+              ${g.initials || g.name?.[0] || '?'}
+              <div class="status-dot ${statusClass}"></div>
+            </div>
+            <div class="team-info">
+              <div class="team-name">${g.name}</div>
+              <div class="team-location">${g.status !== 'offline' ? (g.location_name || 'Unknown') + (g.zone ? ' · ' + g.zone : '') : statusText}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     function updateStatus(guard) {
