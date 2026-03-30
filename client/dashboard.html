@@ -140,7 +140,12 @@
     <div class="section map-section">
       <div class="section-header">
         <span class="section-title">LIVE LOCATIONS</span>
-        <span class="section-sub">Updates every 30s</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="section-sub" id="last-refresh">Updated just now</span>
+          <button onclick="refreshMap()" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:#22c55e;padding:4px 10px;border-radius:6px;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:4px">
+            <span id="refresh-icon">↻</span> Refresh
+          </button>
+        </div>
       </div>
       <div id="map"></div>
     </div>
@@ -234,27 +239,43 @@
       }
     }
 
+    function getTimeSince(timestamp) {
+      if (!timestamp) return '';
+      const now = new Date();
+      const then = new Date(timestamp);
+      const diffMs = now - then;
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHrs = Math.floor(diffMins / 60);
+      if (diffHrs < 24) return `${diffHrs}h ago`;
+      return `${Math.floor(diffHrs / 24)}d ago`;
+    }
+
     function updateMap(guards, locations) {
       // Clear old markers
       Object.values(guardMarkers).forEach(m => map.removeLayer(m));
       Object.values(locationMarkers).forEach(m => map.removeLayer(m));
 
-      // Add location markers
+      // Add location markers with subtle pulse
       const allBounds = [];
       (locations || []).forEach(loc => {
         if (loc.lat && loc.lng) {
           const icon = L.divIcon({
-            className: 'location-marker',
-            html: `<div style="width:24px;height:24px;background:#e8b84b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3)">📍</div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
+            className: 'location-marker-container',
+            html: `
+              <div class="location-marker-ping"></div>
+              <div style="width:28px;height:28px;background:#e8b84b;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.4);position:relative;z-index:10">📍</div>
+            `,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
           });
 
           const marker = L.marker([loc.lat, loc.lng], { icon }).addTo(map);
           marker.bindPopup(`
-            <div style="font-family:Inter,sans-serif;font-size:12px">
-              <strong>${loc.name}</strong><br>
-              ${loc.address || 'No address'}
+            <div style="font-family:Inter,sans-serif;font-size:12px;min-width:120px">
+              <strong style="color:#e8b84b">${loc.name}</strong><br>
+              <span style="color:#9ca3af">${loc.address || 'No address'}</span>
             </div>
           `);
           locationMarkers[loc.id] = marker;
@@ -262,22 +283,41 @@
         }
       });
 
-      // Add guard markers
+      // Add guard markers with Find My style pulsing
       guards.forEach(guard => {
         if (guard.lat && guard.lng) {
+          const lastSeen = getTimeSince(guard.last_updated);
+          const statusColor = guard.status === 'active' ? '#22c55e' : '#e8b84b';
+
           const icon = L.divIcon({
             className: 'guard-marker ' + guard.status,
-            html: `<div style="width:28px;height:28px;background:${guard.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${guard.initials[0]}</div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14]
+            html: `
+              <div class="guard-marker-ping ring1"></div>
+              <div class="guard-marker-ping ring2"></div>
+              <div class="guard-marker-ping ring3"></div>
+              <div class="guard-marker-dot" style="background:${guard.color}">
+                ${guard.initials}
+              </div>
+              ${lastSeen ? `<div class="last-seen-badge">${lastSeen}</div>` : ''}
+            `,
+            iconSize: [60, 60],
+            iconAnchor: [30, 30]
           });
 
           const marker = L.marker([guard.lat, guard.lng], { icon }).addTo(map);
           marker.bindPopup(`
-            <div style="font-family:Inter,sans-serif;font-size:12px">
-              <strong>${guard.name}</strong><br>
-              ${guard.location_name || 'Unknown'} ${guard.zone ? '· ' + guard.zone : ''}<br>
-              <span style="color:${guard.status === 'active' ? '#22c55e' : '#e8b84b'}">${guard.status === 'active' ? 'On Duty' : 'On Break'}</span>
+            <div style="font-family:Inter,sans-serif;font-size:12px;min-width:140px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <div style="width:24px;height:24px;background:${guard.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff">${guard.initials}</div>
+                <strong>${guard.name}</strong>
+              </div>
+              <div style="color:#9ca3af;font-size:11px">${guard.location_name || 'Unknown'} ${guard.zone ? '· ' + guard.zone : ''}</div>
+              <div style="margin-top:4px">
+                <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;background:${guard.status === 'active' ? 'rgba(34,197,94,0.15)' : 'rgba(232,184,75,0.15)'};color:${statusColor}">
+                  ${guard.status === 'active' ? '● On Duty' : '● On Break'}
+                </span>
+              </div>
+              ${lastSeen ? `<div style="color:#6b7280;font-size:10px;margin-top:6px">Last ping: ${lastSeen}</div>` : ''}
             </div>
           `);
           guardMarkers[guard.id] = marker;
@@ -287,7 +327,7 @@
 
       // Fit bounds to show all markers
       if (allBounds.length > 0) {
-        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 14 });
+        map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 15 });
       }
     }
 
@@ -354,11 +394,47 @@
       }
     }
 
+    // Refresh map with animation
+    let isRefreshing = false;
+    async function refreshMap() {
+      if (isRefreshing) return;
+      isRefreshing = true;
+      const icon = document.getElementById('refresh-icon');
+      icon.style.animation = 'spin 0.5s linear infinite';
+
+      await loadDashboard();
+
+      icon.style.animation = '';
+      isRefreshing = false;
+      updateLastRefresh();
+    }
+
+    function updateLastRefresh() {
+      document.getElementById('last-refresh').textContent = 'Updated just now';
+    }
+
+    // Update "last refresh" text
+    let refreshAge = 0;
+    setInterval(() => {
+      refreshAge++;
+      const el = document.getElementById('last-refresh');
+      if (refreshAge < 60) {
+        el.textContent = refreshAge < 5 ? 'Updated just now' : `Updated ${refreshAge}s ago`;
+      } else {
+        el.textContent = `Updated ${Math.floor(refreshAge/60)}m ago`;
+      }
+    }, 1000);
+
     // Initial load
     loadDashboard();
+    updateLastRefresh();
 
-    // Refresh every 30 seconds
-    setInterval(loadDashboard, 30000);
+    // Refresh every 15 seconds for live feel
+    setInterval(() => {
+      loadDashboard();
+      refreshAge = 0;
+      updateLastRefresh();
+    }, 15000);
 
     // Modal functions
     function showModal(id) {

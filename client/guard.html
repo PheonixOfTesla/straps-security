@@ -194,31 +194,59 @@
       }).join('');
     }
 
-    // GPS tracking
+    // GPS tracking - Find My style frequent updates
+    let lastLat = null, lastLng = null;
     function startTracking() {
       if (!navigator.geolocation) {
         console.log('Geolocation not supported');
         return;
       }
 
+      // Watch for position changes
       watchId = navigator.geolocation.watchPosition(
         async (pos) => {
-          try {
-            await api('/guards/location', {
-              method: 'POST',
-              body: JSON.stringify({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: pos.coords.accuracy
-              })
-            });
-          } catch (err) {
-            console.error('Failed to update location:', err);
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          // Only send update if position changed significantly (>10m)
+          const moved = !lastLat || !lastLng ||
+            Math.abs(lat - lastLat) > 0.0001 ||
+            Math.abs(lng - lastLng) > 0.0001;
+
+          if (moved) {
+            lastLat = lat;
+            lastLng = lng;
+            try {
+              await api('/guards/location', {
+                method: 'POST',
+                body: JSON.stringify({
+                  lat: lat,
+                  lng: lng,
+                  accuracy: pos.coords.accuracy
+                })
+              });
+              console.log('Location updated:', lat.toFixed(5), lng.toFixed(5));
+            } catch (err) {
+              console.error('Failed to update location:', err);
+            }
           }
         },
         (err) => console.error('Geolocation error:', err),
-        { enableHighAccuracy: true, maximumAge: 30000 }
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
+
+      // Also send periodic ping every 30s even if stationary
+      setInterval(async () => {
+        if (lastLat && lastLng && currentStatus !== 'offline') {
+          try {
+            await api('/guards/location', {
+              method: 'POST',
+              body: JSON.stringify({ lat: lastLat, lng: lastLng, accuracy: 0 })
+            });
+            console.log('Heartbeat ping sent');
+          } catch (err) {}
+        }
+      }, 30000);
     }
 
     function stopTracking() {
