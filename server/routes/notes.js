@@ -50,7 +50,7 @@ router.post('/', verifyToken, async (req, res) => {
     const result = await prepare(`INSERT INTO shift_notes (shift_id, guard_id, location_id, content, note_type) VALUES (?, ?, ?, ?, ?)`).run(shift_id ? parseInt(shift_id) : null, req.user.id, locId, content, note_type || 'general');
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(req.user.id);
-    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, 'note', ?)`).run(req.user.id, locId, 'note', `${guard.name} added a ${note_type || 'general'} note`);
+    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, ?, ?)`).run(req.user.id, locId, 'note', `${guard.name} added a ${note_type || 'general'} note`);
 
     res.json({ id: result.lastInsertRowid, message: 'Note created' });
   } catch (err) {

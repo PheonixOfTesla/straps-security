@@ -32,8 +32,10 @@ function prepare(sql) {
         return { lastInsertRowid: data?.id || 0 };
       }
       if (sql.includes('INSERT INTO checkins')) {
+        // Determine type from SQL - checkout or checkin
+        const type = sql.includes("'checkout'") ? 'checkout' : 'checkin';
         const { data } = await supabase.from('checkins').insert({
-          guard_id: params[0], location_id: params[1], type: 'checkin',
+          guard_id: params[0], location_id: params[1], type: type,
           lat: params[2], lng: params[3]
         }).select('id').single();
         return { lastInsertRowid: data?.id || 0 };

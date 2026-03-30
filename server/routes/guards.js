@@ -90,7 +90,7 @@ router.post('/checkin', verifyToken, async (req, res) => {
     }
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
-    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, 'checkin', ?)`).run(guardId, location_id, `${guard.name} checked in at ${location.name}${zone ? ' - ' + zone : ''}`);
+    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, ?, ?)`).run(guardId, location_id, 'checkin', `${guard.name} checked in at ${location.name}${zone ? ' - ' + zone : ''}`);
 
     res.json({ success: true, message: 'Checked in successfully' });
   } catch (err) {
@@ -116,7 +116,7 @@ router.post('/checkout', verifyToken, async (req, res) => {
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
     const location = await prepare('SELECT name FROM locations WHERE id = ?').get(status.current_location_id);
-    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, 'checkout', ?)`).run(guardId, status.current_location_id, `${guard.name} checked out from ${location?.name || 'location'}`);
+    await prepare(`INSERT INTO activity_log (guard_id, location_id, action, details) VALUES (?, ?, ?, ?)`).run(guardId, status.current_location_id, 'checkout', `${guard.name} checked out from ${location?.name || 'location'}`);
 
     res.json({ success: true, message: 'Checked out successfully' });
   } catch (err) {
