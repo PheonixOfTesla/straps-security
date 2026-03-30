@@ -636,22 +636,22 @@
 
       try {
         // Fetch all data
-        const [guardsRes, locationsRes, activityRes, checkinsRes] = await Promise.all([
+        const [guardsRes, locationsRes, notesRes, checkinsRes] = await Promise.all([
           api('/auth/users'),
           api('/locations'),
-          api('/dashboard/activity?limit=5000'),
+          api('/notes?limit=5000'),
           api('/dashboard/checkins?limit=5000')
         ]);
 
         const guardsData = await guardsRes.json();
         const locationsData = await locationsRes.json();
-        const activityData = await activityRes.json();
+        const notesData = await notesRes.json();
         const checkinsData = await checkinsRes.json();
 
         const guards = guardsData.users.filter(u => u.role === 'guard');
         const locations = locationsData.locations;
-        const activities = activityData.activities.filter(a => {
-          const d = a.timestamp?.split('T')[0];
+        const allNotes = (notesData.notes || []).filter(n => {
+          const d = n.created_at?.split('T')[0];
           return d >= startDate && d <= endDate;
         });
         const checkins = (checkinsData.checkins || []).filter(c => {
@@ -659,32 +659,21 @@
           return d >= startDate && d <= endDate;
         });
 
-        // Build comprehensive CSV
+        // Build clean CSV: Guard | Total Hours | Locations | Notes
         let csv = `STRAPS SECURITY - WEEKLY REPORT\n`;
         csv += `Report Period: ${startDate} to ${endDate}\n`;
         csv += `Generated: ${new Date().toLocaleString()}\n\n`;
 
-        // Locations summary
-        csv += `=== LOCATIONS ===\n`;
-        csv += `Name,Address,Coordinates\n`;
-        locations.forEach(l => {
-          csv += `"${l.name}","${l.address || ''}","${l.lat || ''},${l.lng || ''}"\n`;
-        });
-        csv += `\n`;
+        // Summary table header
+        csv += `GUARD SUMMARY\n`;
+        csv += `Guard Name,Guard Type,Total Hours,Locations Worked,Number of Notes\n`;
 
-        // Per-guard report
-        guards.forEach(guard => {
-          csv += `=== GUARD: ${guard.name} (${guard.username}) ===\n`;
-          csv += `Type: ${guard.guard_type || 'security'}\n\n`;
+        let grandTotalHours = 0;
 
-          // Guard's checkins
+        // Calculate summary for each guard
+        const guardSummaries = guards.map(guard => {
           const guardCheckins = checkins.filter(c => c.guard_id === guard.id);
-          csv += `CHECK-INS/OUTS:\n`;
-          csv += `Date,Time,Type,Location,Latitude,Longitude\n`;
-          guardCheckins.forEach(c => {
-            const dt = new Date(c.timestamp);
-            csv += `"${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${c.type}","${c.location_name || ''}",${c.lat || ''},${c.lng || ''}\n`;
-          });
+          const guardNotes = allNotes.filter(n => n.guard_id === guard.id);
 
           // Calculate hours
           let totalMinutes = 0;
@@ -697,27 +686,97 @@
               lastCheckin = null;
             }
           });
-          csv += `\nTOTAL HOURS: ${(totalMinutes / 60).toFixed(2)}\n`;
+          const totalHours = Math.round(totalMinutes / 60 * 100) / 100;
+          grandTotalHours += totalHours;
 
-          // Guard's activity
-          const guardActivity = activities.filter(a => a.guard_id === guard.id);
-          csv += `\nACTIVITY LOG:\n`;
-          csv += `Date,Time,Action,Location,Details\n`;
-          guardActivity.forEach(a => {
-            const dt = new Date(a.timestamp);
-            csv += `"${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${a.action}","${a.location_name || ''}","${(a.details || '').replace(/"/g, '""')}"\n`;
-          });
+          // Get unique locations worked
+          const locationsWorked = [...new Set(guardCheckins.filter(c => c.location_name).map(c => c.location_name))];
 
-          csv += `\n\n`;
+          return {
+            guard,
+            totalHours,
+            locationsWorked,
+            notes: guardNotes,
+            checkins: guardCheckins
+          };
         });
 
-        // Summary
-        csv += `=== SUMMARY ===\n`;
-        csv += `Total Guards: ${guards.length}\n`;
-        csv += `Total Locations: ${locations.length}\n`;
-        csv += `Total Check-ins: ${checkins.filter(c => c.type === 'checkin').length}\n`;
-        csv += `Total Check-outs: ${checkins.filter(c => c.type === 'checkout').length}\n`;
-        csv += `Total Activities: ${activities.length}\n`;
+        // Write summary rows
+        guardSummaries.forEach(s => {
+          csv += `"${s.guard.name}","${s.guard.guard_type || 'security'}",${s.totalHours},"${s.locationsWorked.join(', ')}",${s.notes.length}\n`;
+        });
+
+        csv += `\nTOTAL HOURS ALL GUARDS: ${grandTotalHours.toFixed(2)}\n\n`;
+
+        // Detailed breakdown per guard
+        csv += `\n========================================\n`;
+        csv += `DETAILED BREAKDOWN BY GUARD\n`;
+        csv += `========================================\n\n`;
+
+        guardSummaries.forEach(s => {
+          csv += `--- ${s.guard.name} (${s.guard.username}) ---\n`;
+          csv += `Type: ${s.guard.guard_type || 'security'}\n`;
+          csv += `Total Hours: ${s.totalHours}\n`;
+          csv += `Locations: ${s.locationsWorked.join(', ') || 'None'}\n\n`;
+
+          // Time log
+          if (s.checkins.length > 0) {
+            csv += `Time Log:\n`;
+            csv += `Date,Check In,Check Out,Location,Hours\n`;
+
+            // Group checkins by day and pair them
+            const days = {};
+            s.checkins.forEach(c => {
+              const day = c.timestamp?.split('T')[0];
+              if (!days[day]) days[day] = [];
+              days[day].push(c);
+            });
+
+            Object.keys(days).sort().forEach(day => {
+              const dayCheckins = days[day].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+              let lastIn = null;
+              dayCheckins.forEach(c => {
+                if (c.type === 'checkin') {
+                  lastIn = c;
+                } else if (c.type === 'checkout' && lastIn) {
+                  const inTime = new Date(lastIn.timestamp);
+                  const outTime = new Date(c.timestamp);
+                  const hrs = ((outTime - inTime) / (1000 * 60 * 60)).toFixed(2);
+                  csv += `"${day}","${inTime.toLocaleTimeString()}","${outTime.toLocaleTimeString()}","${c.location_name || ''}",${hrs}\n`;
+                  lastIn = null;
+                }
+              });
+              // If still checked in (no checkout)
+              if (lastIn) {
+                const inTime = new Date(lastIn.timestamp);
+                csv += `"${day}","${inTime.toLocaleTimeString()}","(still on duty)","${lastIn.location_name || ''}",--\n`;
+              }
+            });
+            csv += `\n`;
+          }
+
+          // Notes
+          if (s.notes.length > 0) {
+            csv += `Notes:\n`;
+            csv += `Date,Time,Type,Content\n`;
+            s.notes.forEach(n => {
+              const dt = new Date(n.created_at);
+              csv += `"${dt.toLocaleDateString()}","${dt.toLocaleTimeString()}","${n.note_type || 'general'}","${(n.content || '').replace(/"/g, '""').replace(/\n/g, ' ')}"\n`;
+            });
+            csv += `\n`;
+          }
+
+          csv += `\n`;
+        });
+
+        // All locations reference
+        csv += `\n========================================\n`;
+        csv += `ALL LOCATIONS\n`;
+        csv += `========================================\n`;
+        csv += `Name,Address\n`;
+        locations.forEach(l => {
+          csv += `"${l.name}","${l.address || ''}"\n`;
+        });
 
         downloadCSV(`straps_weekly_report_${startDate}_to_${endDate}.csv`, csv);
         hideModal('export-modal');
