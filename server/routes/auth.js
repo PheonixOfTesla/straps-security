@@ -134,10 +134,20 @@ router.delete('/users/:id', verifyToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete yourself' });
     }
 
+    // Delete all related records first (cascade delete)
+    await prepare('DELETE FROM checkins WHERE guard_id = ?').run(userId);
+    await prepare('DELETE FROM activity_log WHERE guard_id = ?').run(userId);
+    await prepare('DELETE FROM shift_notes WHERE guard_id = ?').run(userId);
+    await prepare('DELETE FROM location_history WHERE guard_id = ?').run(userId);
+    await prepare('DELETE FROM shifts WHERE guard_id = ?').run(userId);
+    await prepare('DELETE FROM availability WHERE guard_id = ?').run(userId);
     await prepare('DELETE FROM guard_status WHERE guard_id = ?').run(userId);
+
+    // Finally delete the user
     await prepare('DELETE FROM users WHERE id = ? AND role = ?').run(userId, 'guard');
     res.json({ message: 'Guard deleted' });
   } catch (err) {
+    console.error('Delete guard error:', err);
     res.status(500).json({ error: 'Failed to delete guard' });
   }
 });

@@ -129,19 +129,37 @@ function prepare(sql) {
       if (sql.includes('DELETE FROM guard_status WHERE guard_id')) {
         await supabase.from('guard_status').delete().eq('guard_id', params[0]);
       }
+      if (sql.includes('DELETE FROM checkins WHERE guard_id')) {
+        await supabase.from('checkins').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM activity_log WHERE guard_id')) {
+        await supabase.from('activity_log').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM shift_notes WHERE guard_id')) {
+        await supabase.from('shift_notes').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM location_history WHERE guard_id')) {
+        await supabase.from('location_history').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM shifts WHERE guard_id')) {
+        await supabase.from('shifts').delete().eq('guard_id', params[0]);
+      }
+      if (sql.includes('DELETE FROM availability WHERE guard_id')) {
+        await supabase.from('availability').delete().eq('guard_id', params[0]);
+      }
       if (sql.includes('DELETE FROM users WHERE id')) {
         await supabase.from('users').delete().eq('id', params[0]).eq('role', params[1] || 'guard');
       }
-      if (sql.includes('DELETE FROM locations')) {
+      if (sql.includes('DELETE FROM locations WHERE id')) {
         await supabase.from('locations').delete().eq('id', params[0]);
       }
-      if (sql.includes('DELETE FROM shifts')) {
+      if (sql.includes('DELETE FROM shifts WHERE id')) {
         await supabase.from('shifts').delete().eq('id', params[0]);
       }
-      if (sql.includes('DELETE FROM shift_notes')) {
+      if (sql.includes('DELETE FROM shift_notes WHERE id')) {
         await supabase.from('shift_notes').delete().eq('id', params[0]);
       }
-      if (sql.includes('DELETE FROM availability')) {
+      if (sql.includes('DELETE FROM availability WHERE id')) {
         await supabase.from('availability').delete().eq('id', params[0]);
       }
 
