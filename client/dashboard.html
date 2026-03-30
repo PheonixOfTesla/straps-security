@@ -18,6 +18,8 @@
     <div class="topbar-right">
       <button class="admin-btn" onclick="showModal('guards-modal')">+ Guard</button>
       <button class="admin-btn" onclick="showModal('locations-modal')">+ Location</button>
+      <button class="admin-btn" onclick="showModal('export-modal')">Export</button>
+      <button class="admin-btn" onclick="showModal('activity-modal')">Activity Log</button>
       <span id="clock"></span>
       <div class="avatar" id="user-avatar">C</div>
       <span id="user-name">Admin</span>
@@ -47,6 +49,40 @@
         </select>
         <input type="color" id="guard-color" value="#3b82f6" class="modal-color">
         <button class="modal-btn" onclick="addGuard()">Add Guard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div class="modal" id="export-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Export Data</h3>
+        <button class="close-btn" onclick="hideModal('export-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--muted);font-size:12px;margin-bottom:16px">Download data as CSV files</p>
+        <button class="modal-btn" onclick="exportGuards()" style="margin-bottom:8px">Export Guards</button>
+        <button class="modal-btn" onclick="exportLocations()" style="margin-bottom:8px">Export Locations</button>
+        <button class="modal-btn" onclick="exportActivity()" style="margin-bottom:8px">Export Activity Log</button>
+        <button class="modal-btn" onclick="exportCheckins()">Export Check-ins/Timestamps</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Modal -->
+  <div class="modal" id="activity-modal">
+    <div class="modal-content" style="max-width:600px">
+      <div class="modal-header">
+        <h3>Full Activity Log</h3>
+        <button class="close-btn" onclick="hideModal('activity-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="filter-row" style="margin-bottom:12px;display:flex;gap:8px">
+          <input type="date" id="activity-date" class="modal-input" style="flex:1;margin-bottom:0">
+          <button class="modal-btn" onclick="loadFullActivity()" style="width:auto;padding:10px 16px">Filter</button>
+        </div>
+        <div id="full-activity-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
     </div>
   </div>
@@ -491,6 +527,117 @@
         if (e.target === modal) hideModal(modal.id);
       });
     });
+
+    // Export functions
+    function downloadCSV(filename, csvContent) {
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+
+    async function exportGuards() {
+      try {
+        const res = await api('/auth/users');
+        const data = await res.json();
+        const guards = data.users.filter(u => u.role === 'guard');
+
+        let csv = 'ID,Name,Username,Guard Type,Color,Created\n';
+        guards.forEach(g => {
+          csv += `${g.id},"${g.name}","${g.username}","${g.guard_type || 'security'}","${g.color}","${g.created_at || ''}"\n`;
+        });
+
+        downloadCSV('straps_guards_' + new Date().toISOString().split('T')[0] + '.csv', csv);
+      } catch (err) {
+        alert('Failed to export guards');
+      }
+    }
+
+    async function exportLocations() {
+      try {
+        const res = await api('/locations');
+        const data = await res.json();
+
+        let csv = 'ID,Name,Address,Latitude,Longitude,Created\n';
+        data.locations.forEach(l => {
+          csv += `${l.id},"${l.name}","${l.address || ''}",${l.lat || ''},${l.lng || ''},"${l.created_at || ''}"\n`;
+        });
+
+        downloadCSV('straps_locations_' + new Date().toISOString().split('T')[0] + '.csv', csv);
+      } catch (err) {
+        alert('Failed to export locations');
+      }
+    }
+
+    async function exportActivity() {
+      try {
+        const res = await api('/dashboard/activity?limit=1000');
+        const data = await res.json();
+
+        let csv = 'Timestamp,Guard,Location,Action,Details\n';
+        data.activities.forEach(a => {
+          const time = new Date(a.timestamp).toLocaleString();
+          csv += `"${time}","${a.guard_name || ''}","${a.location_name || ''}","${a.action}","${(a.details || '').replace(/"/g, '""')}"\n`;
+        });
+
+        downloadCSV('straps_activity_' + new Date().toISOString().split('T')[0] + '.csv', csv);
+      } catch (err) {
+        alert('Failed to export activity');
+      }
+    }
+
+    async function exportCheckins() {
+      try {
+        const res = await api('/dashboard/checkins?limit=1000');
+        const data = await res.json();
+
+        let csv = 'Timestamp,Guard,Location,Type,Latitude,Longitude\n';
+        (data.checkins || []).forEach(c => {
+          const time = new Date(c.timestamp).toLocaleString();
+          csv += `"${time}","${c.guard_name || ''}","${c.location_name || ''}","${c.type}",${c.lat || ''},${c.lng || ''}\n`;
+        });
+
+        downloadCSV('straps_checkins_' + new Date().toISOString().split('T')[0] + '.csv', csv);
+      } catch (err) {
+        alert('Failed to export check-ins');
+      }
+    }
+
+    async function loadFullActivity() {
+      const dateInput = document.getElementById('activity-date').value;
+      const container = document.getElementById('full-activity-list');
+
+      try {
+        let url = '/dashboard/activity?limit=100';
+        if (dateInput) {
+          url = '/dashboard/activity/today';
+        }
+
+        const res = await api(url);
+        const data = await res.json();
+
+        container.innerHTML = data.activities.map(a => {
+          const time = new Date(a.timestamp).toLocaleString('en-US', {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+          const color = a.action === 'checkin' ? '#22c55e' : a.action === 'checkout' ? '#ef4444' :
+                        a.action.includes('break') ? '#e8b84b' : '#6b7280';
+          return `
+            <div class="list-item" style="margin-bottom:8px">
+              <div class="log-dot" style="background:${color};width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
+              <div class="list-info" style="flex:1">
+                <div class="list-name">${a.details || a.action}</div>
+                <div class="list-sub">${a.guard_name || 'System'} · ${a.location_name || 'N/A'}</div>
+              </div>
+              <div style="font-size:11px;color:var(--muted)">${time}</div>
+            </div>
+          `;
+        }).join('') || '<div class="empty-text">No activity found</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="empty-text">Failed to load activity</div>';
+      }
+    }
   </script>
 </body>
 </html>

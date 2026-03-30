@@ -84,4 +84,15 @@ router.get('/map', verifyToken, async (req, res) => {
   }
 });
 
+// Get checkins for export
+router.get('/checkins', verifyToken, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const checkins = await prepare(`SELECT c.*, u.name as guard_name, l.name as location_name FROM checkins c LEFT JOIN users u ON c.guard_id = u.id LEFT JOIN locations l ON c.location_id = l.id ORDER BY c.timestamp DESC LIMIT ?`).all(limit);
+    res.json({ checkins });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get checkins' });
+  }
+});
+
 export default router;

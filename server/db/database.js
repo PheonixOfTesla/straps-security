@@ -243,6 +243,18 @@ function prepare(sql) {
         data?.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
         return Object.entries(counts).map(([status, count]) => ({ status, count }));
       }
+      // Checkins for export (with joins)
+      if (sql.includes('FROM checkins c') && sql.includes('LEFT JOIN users') && sql.includes('LIMIT')) {
+        const { data } = await supabase.from('checkins')
+          .select('*, users(name), locations(name)')
+          .order('timestamp', { ascending: false })
+          .limit(params[0]);
+        return data?.map(c => ({
+          ...c,
+          guard_name: c.users?.name,
+          location_name: c.locations?.name
+        })) || [];
+      }
       // Checkins by guard and date
       if (sql.includes('FROM checkins') && sql.includes('guard_id = ?')) {
         const { data } = await supabase.from('checkins')
