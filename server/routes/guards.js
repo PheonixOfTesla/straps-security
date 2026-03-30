@@ -84,9 +84,9 @@ router.post('/checkin', verifyToken, async (req, res) => {
     const existing = await prepare('SELECT id FROM guard_status WHERE guard_id = ?').get(guardId);
 
     if (existing) {
-      await prepare(`UPDATE guard_status SET status = 'active', current_location_id = ?, zone = ?, lat = ?, lng = ?, last_updated = datetime('now') WHERE guard_id = ?`).run(location_id, zone || null, lat || location.lat, lng || location.lng, guardId);
+      await prepare(`UPDATE guard_status SET status = ?, current_location_id = ?, zone = ?, lat = ?, lng = ?, last_updated = datetime('now') WHERE guard_id = ?`).run('active', location_id, zone || null, lat || location.lat, lng || location.lng, guardId);
     } else {
-      await prepare(`INSERT INTO guard_status (guard_id, status, current_location_id, zone, lat, lng) VALUES (?, 'active', ?, ?, ?, ?)`).run(guardId, location_id, zone || null, lat || location.lat, lng || location.lng);
+      await prepare(`INSERT INTO guard_status (guard_id, status, current_location_id, zone, lat, lng) VALUES (?, ?, ?, ?, ?, ?)`).run(guardId, 'active', location_id, zone || null, lat || location.lat, lng || location.lng);
     }
 
     const guard = await prepare('SELECT name FROM users WHERE id = ?').get(guardId);
