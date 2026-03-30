@@ -28,19 +28,23 @@
       <div class="current-location" id="current-location">Not checked in</div>
       <div class="current-zone" id="current-zone">-</div>
 
-      <!-- Check-in Section (shown when offline) -->
-      <div id="checkin-section">
+      <!-- Location Selection (shown when offline) -->
+      <div id="location-section">
         <select class="location-select" id="location-select">
           <option value="">Select Location</option>
         </select>
         <input type="text" class="field" id="zone-input" placeholder="Zone (e.g., Lobby, Parking)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);margin-bottom:12px">
-        <button class="btn checkin-btn" onclick="checkIn()">CHECK IN</button>
       </div>
 
-      <!-- Active Section (shown when checked in) -->
-      <div id="active-section" style="display:none">
-        <button class="btn checkin-btn" id="break-btn" onclick="toggleBreak()">START BREAK</button>
-        <button class="btn btn-danger checkin-btn" onclick="checkOut()" style="margin-top:8px">CHECK OUT</button>
+      <!-- Check In / Check Out Buttons - Side by Side -->
+      <div class="action-buttons">
+        <button class="btn checkin-btn btn-checkin" id="checkin-btn" onclick="checkIn()">CHECK IN</button>
+        <button class="btn checkin-btn btn-checkout" id="checkout-btn" onclick="checkOut()" disabled>CHECK OUT</button>
+      </div>
+
+      <!-- Break Button (shown when checked in) -->
+      <div id="break-section" style="display:none;margin-top:12px">
+        <button class="btn btn-outline checkin-btn" id="break-btn" onclick="toggleBreak()">START BREAK</button>
       </div>
     </div>
 
@@ -145,9 +149,14 @@
       currentLocation = guard.location_id;
 
       const badge = document.getElementById('status-badge');
-      const checkinSection = document.getElementById('checkin-section');
-      const activeSection = document.getElementById('active-section');
+      const locationSection = document.getElementById('location-section');
+      const breakSection = document.getElementById('break-section');
+      const checkinBtn = document.getElementById('checkin-btn');
+      const checkoutBtn = document.getElementById('checkout-btn');
       const breakBtn = document.getElementById('break-btn');
+
+      // Reset badge classes
+      badge.className = 'guard-status-badge';
 
       if (currentStatus === 'offline') {
         badge.textContent = 'OFFLINE';
@@ -156,13 +165,20 @@
         document.getElementById('current-location').textContent = 'Not checked in';
         document.getElementById('current-zone').textContent = '-';
         document.getElementById('shift-time').textContent = '-';
-        checkinSection.style.display = 'block';
-        activeSection.style.display = 'none';
+
+        // Show location select, enable check-in, disable check-out
+        locationSection.style.display = 'block';
+        breakSection.style.display = 'none';
+        checkinBtn.disabled = false;
+        checkoutBtn.disabled = true;
         checkinTime = null;
       } else {
-        badge.textContent = currentStatus === 'active' ? 'ON DUTY' : 'ON BREAK';
-        badge.style.background = currentStatus === 'active' ? 'rgba(34,197,94,0.2)' : 'rgba(232,184,75,0.2)';
-        badge.style.color = currentStatus === 'active' ? '#22c55e' : '#e8b84b';
+        // Online - pulsing green or amber for break
+        badge.textContent = currentStatus === 'active' ? 'ONLINE' : 'ON BREAK';
+        badge.classList.add(currentStatus === 'active' ? 'online' : 'on-break');
+        badge.style.background = ''; // Let CSS handle it
+        badge.style.color = '';
+
         document.getElementById('current-location').textContent = guard.location_name || 'Unknown';
         document.getElementById('current-zone').textContent = guard.zone || '-';
         document.getElementById('shift-location').textContent = guard.location_name || '-';
@@ -170,10 +186,13 @@
           const updated = new Date(guard.last_updated);
           document.getElementById('shift-time').textContent = updated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' - Now';
         }
-        checkinSection.style.display = 'none';
-        activeSection.style.display = 'block';
+
+        // Hide location select, disable check-in, enable check-out
+        locationSection.style.display = 'none';
+        breakSection.style.display = 'block';
+        checkinBtn.disabled = true;
+        checkoutBtn.disabled = false;
         breakBtn.textContent = currentStatus === 'break' ? 'END BREAK' : 'START BREAK';
-        breakBtn.className = currentStatus === 'break' ? 'btn checkin-btn' : 'btn btn-outline checkin-btn';
       }
     }
 
